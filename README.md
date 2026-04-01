@@ -11,7 +11,12 @@ Bare-minimum Arduino prototype for this pipeline:
 
 ## Quick start
 
-1. Copy `src/config.h.example` to `src/config.h` and edit it with your Wi-Fi, NTRIP, and pin settings.
+1. Copy `src/config.h.example` to `src/config.h` and edit it with your initial Wi-Fi, NTRIP, and pin settings.
+
+```bash
+cp src/config.h.example src/config.h
+```
+
 2. Build/flash with PlatformIO:
 
 ```bash
@@ -22,28 +27,35 @@ pio device monitor
 3. In QField (iOS), configure external GNSS as TCP client to ESP32 IP and port `10110` (or your configured port).
    You can try hostname `esp32-rover.local` if your network/client resolves mDNS.
 
-When connected in STA mode, the config/status page is also available on the rover IP:
+## Web UI
 
-- `http://<rover_sta_ip>/`
-- `http://esp32-rover.local/` (if mDNS resolves)
-- `http://<rover_sta_ip>/status` shows formatted live status (auto-refresh every 2s).
-- `http://<rover_sta_ip>/config` shows editable Wi-Fi + NTRIP config.
+When connected in STA mode, the web UI is available on the rover IP:
+
+- `http://<rover_sta_ip>/status` (formatted live status, auto-refresh every 2s)
+- `http://<rover_sta_ip>/config` (edit Wi-Fi + NTRIP)
+- `http://esp32-rover.local/status` and `http://esp32-rover.local/config` (if mDNS resolves)
 
 If the rover cannot join Wi-Fi for `WIFI_AP_FALLBACK_MS`, it starts an AP + config page:
 
 - SSID: `Rover-Setup-xxxxxx`
 - URL: `http://192.168.4.1/`
-- Save Wi-Fi + NTRIP settings and the rover reboots.
-- Status page shows masked Wi-Fi/NTRIP passwords and formatted live telemetry.
-- Includes delete actions for saved Wi-Fi or saved NTRIP (each reboots).
-- Config page includes a non-reboot NTRIP connectivity test button.
+- `/status` and `/config` are both available in AP mode
+- Save Wi-Fi + NTRIP settings and the rover reboots
+- Delete actions available for saved Wi-Fi or saved NTRIP (each reboots)
+- Config page includes a non-reboot NTRIP connectivity test button
+
+## Config persistence
+
+- Runtime config is loaded from NVS if present; otherwise it falls back to `src/config.h`
+- AP fallback does not erase saved Wi-Fi/NTRIP settings
+- Saved Wi-Fi/NTRIP remain active across reboots until overwritten or deleted
 
 ## Notes
 
 - `NTRIP_SEND_GGA` is enabled by default and can be disabled in `src/config.h`.
 - The server allows one QField TCP client in this prototype.
-- All config is hardcoded by design for phase-1 speed.
-- Wi-Fi credentials can be updated in field via AP web portal and are saved in NVS.
+- `src/config.h` is local/ignored; keep `src/config.h.example` in git as template.
+- Wi-Fi and NTRIP credentials can be updated in field via AP/STA web portal and are saved in NVS.
 - LC29H startup configuration commands are sent on every boot from `GNSS_STARTUP_COMMANDS` in `src/config.h`.
 - Startup commands are generated with automatic NMEA checksum (`$...*CS`).
 
@@ -55,3 +67,5 @@ If the rover cannot join Wi-Fi for `WIFI_AP_FALLBACK_MS`, it starts an AP + conf
 - `src/nmea_parser.*` frames and validates NMEA checksums.
 - `src/nmea_server.*` serves NMEA to QField over TCP.
 - `src/status.*` stores counters and last error cause.
+- `src/ap_portal.*` serves `/status` and `/config` web pages.
+- `src/config_store.*` loads/saves Wi-Fi+NTRIP config to NVS.
