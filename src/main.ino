@@ -196,6 +196,9 @@ static void tick_health(uint32_t now_ms) {
   g_last_health_log_ms = now_ms;
 
   g_status.wifi_connected = g_wifi.is_connected();
+  g_status.ap_active = g_ap_portal.ap_active();
+  g_status.mdns_started = g_mdns.is_started();
+  g_status.cfg_from_nvs = g_cfg_from_nvs;
   g_status.ntrip_connected = (g_ntrip != nullptr) ? g_ntrip->is_streaming() : false;
   g_status.qfield_client_connected = g_nmea_server.has_client();
 
@@ -233,8 +236,8 @@ static void tick_health(uint32_t now_ms) {
   LOGI("st wifi=%d ap=%d cfg=%s mdns=%d ntrip=%d qf=%d rtcm=%lu rx=%lu nmea_in=%lu out=%lu bad=%lu "
        "fix=%s sat=%u hdop=%d.%d age_nmea=%lus age_rtcm=%lus err=%s",
        static_cast<int>(g_status.wifi_connected),
-       static_cast<int>(g_ap_portal.ap_active()), g_cfg_from_nvs ? "nvs" : "default",
-       static_cast<int>(g_mdns.is_started()),
+       static_cast<int>(g_status.ap_active), g_status.cfg_from_nvs ? "nvs" : "default",
+       static_cast<int>(g_status.mdns_started),
        static_cast<int>(g_status.ntrip_connected),
        static_cast<int>(g_status.qfield_client_connected),
        static_cast<unsigned long>(g_status.rtcm_bytes_in),

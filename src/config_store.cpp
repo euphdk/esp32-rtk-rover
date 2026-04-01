@@ -35,7 +35,7 @@ static void set_defaults(RoverConfig* cfg) {
 }
 
 bool config_store_save_all(RoverConfig* cfg) {
-  if (cfg == nullptr || cfg->wifi_ssid[0] == '\0') {
+  if (cfg == nullptr) {
     return false;
   }
 

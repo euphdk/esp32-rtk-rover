@@ -51,7 +51,8 @@ String NtripClient::make_auth_header_() const {
 }
 
 bool NtripClient::connect_and_request_(uint32_t now_ms) {
-  if (host_ == nullptr || mountpoint_ == nullptr) {
+  if (host_ == nullptr || mountpoint_ == nullptr || host_[0] == '\0' ||
+      mountpoint_[0] == '\0') {
     status_set_error("ntrip: invalid host/mount");
     return false;
   }
@@ -187,6 +188,11 @@ void NtripClient::maybe_send_gga_(uint32_t now_ms, const char* latest_gga_line) 
 }
 
 void NtripClient::tick(uint32_t now_ms, bool wifi_ok, const char* latest_gga_line) {
+  if (host_ == nullptr || mountpoint_ == nullptr || host_[0] == '\0' ||
+      mountpoint_[0] == '\0') {
+    return;
+  }
+
   if (!wifi_ok) {
     if (state_ != State::DISCONNECTED) {
       close_with_backoff_("ntrip: wifi down", now_ms, false);

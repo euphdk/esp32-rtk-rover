@@ -22,11 +22,18 @@ pio device monitor
 3. In QField (iOS), configure external GNSS as TCP client to ESP32 IP and port `10110` (or your configured port).
    You can try hostname `esp32-rover.local` if your network/client resolves mDNS.
 
+When connected in STA mode, the config/status page is also available on the rover IP:
+
+- `http://<rover_sta_ip>/`
+- `http://esp32-rover.local/` (if mDNS resolves)
+
 If the rover cannot join Wi-Fi for `WIFI_AP_FALLBACK_MS`, it starts an AP + config page:
 
 - SSID: `Rover-Setup-xxxxxx`
 - URL: `http://192.168.4.1/`
 - Save Wi-Fi + NTRIP settings and the rover reboots.
+- Page shows masked Wi-Fi/NTRIP passwords and live health status line.
+- Includes delete actions for saved Wi-Fi or saved NTRIP (each reboots).
 
 ## Notes
 

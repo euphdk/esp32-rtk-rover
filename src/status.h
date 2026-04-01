@@ -4,6 +4,9 @@
 
 struct RoverStatus {
   bool wifi_connected;
+  bool ap_active;
+  bool mdns_started;
+  bool cfg_from_nvs;
   bool ntrip_connected;
   bool qfield_client_connected;
 
