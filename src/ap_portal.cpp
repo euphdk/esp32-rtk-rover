@@ -28,7 +28,9 @@ static String html_escape(const String& in) {
 
 static void handle_root() {
   String ssid = (g_cfg != nullptr) ? String(g_cfg->wifi_ssid) : String("");
+  String user = (g_cfg != nullptr) ? String(g_cfg->ntrip_user) : String("");
   String host = (g_cfg != nullptr) ? String(g_cfg->ntrip_host) : String("");
+  String port = (g_cfg != nullptr) ? String(g_cfg->ntrip_port) : String("");
   String mount = (g_cfg != nullptr) ? String(g_cfg->ntrip_mountpoint) : String("");
 
   String page;
@@ -41,21 +43,29 @@ static void handle_root() {
   page += "input{width:100%;padding:10px;margin-top:4px;box-sizing:border-box;}";
   page += "button{margin-top:16px;padding:10px 14px;}small{color:#666;}</style></head><body>";
   page += "<h2>ESP32 RTK Rover Setup</h2>";
-  page += "<p>Configure Wi-Fi. NTRIP fields are shown for upcoming support.</p>";
-  page += "<form method='POST' action='/wifi'>";
+  page += "<p>Configure Wi-Fi and NTRIP caster settings.</p>";
+  page += "<form method='POST' action='/config'>";
   page += "<label>Wi-Fi SSID</label><input name='ssid' maxlength='32' value='";
   page += html_escape(ssid);
   page += "' required>";
   page += "<label>Wi-Fi Password</label><input name='pass' maxlength='64' type='password' value=''>";
   page += "<small>Leave blank to keep current saved password.</small>";
-  page += "<h3 style='margin-top:20px'>NTRIP (next step)</h3>";
-  page += "<label>NTRIP Host</label><input value='";
+  page += "<h3 style='margin-top:20px'>NTRIP</h3>";
+  page += "<label>NTRIP Host</label><input name='ntrip_host' maxlength='63' value='";
   page += html_escape(host);
-  page += "' disabled>";
-  page += "<label>Mountpoint</label><input value='";
+  page += "' required>";
+  page += "<label>NTRIP Port</label><input name='ntrip_port' type='number' min='1' max='65535' value='";
+  page += html_escape(port);
+  page += "' required>";
+  page += "<label>Mountpoint</label><input name='ntrip_mount' maxlength='63' value='";
   page += html_escape(mount);
-  page += "' disabled>";
-  page += "<button type='submit'>Save Wi-Fi and Reboot</button></form>";
+  page += "' required>";
+  page += "<label>NTRIP User</label><input name='ntrip_user' maxlength='63' value='";
+  page += html_escape(user);
+  page += "'>";
+  page += "<label>NTRIP Password</label><input name='ntrip_pass' maxlength='63' type='password' value=''>";
+  page += "<small>Leave blank to keep current saved NTRIP password.</small>";
+  page += "<button type='submit'>Save Config and Reboot</button></form>";
   page += "<p><small>AP IP: 192.168.4.1</small></p></body></html>";
 
   g_server.send(200, "text/html", page);
@@ -80,15 +90,30 @@ static void handle_status() {
   g_server.send(200, "application/json", out);
 }
 
-static void handle_wifi_save() {
+static void handle_config_save() {
   String ssid = g_server.arg("ssid");
   String pass = g_server.arg("pass");
+  String ntrip_host = g_server.arg("ntrip_host");
+  String ntrip_port = g_server.arg("ntrip_port");
+  String ntrip_mount = g_server.arg("ntrip_mount");
+  String ntrip_user = g_server.arg("ntrip_user");
+  String ntrip_pass = g_server.arg("ntrip_pass");
 
   ssid.trim();
   pass.trim();
+  ntrip_host.trim();
+  ntrip_port.trim();
+  ntrip_mount.trim();
+  ntrip_user.trim();
+  ntrip_pass.trim();
 
-  if (ssid.length() == 0 || ssid.length() > 32 || pass.length() > 64) {
-    g_server.send(400, "text/plain", "Invalid SSID/password length");
+  const long parsed_port = ntrip_port.toInt();
+  if (ssid.length() == 0 || ssid.length() > 32 || pass.length() > 64 ||
+      ntrip_host.length() == 0 || ntrip_host.length() > 63 ||
+      ntrip_mount.length() == 0 || ntrip_mount.length() > 63 ||
+      ntrip_user.length() > 63 || ntrip_pass.length() > 63 ||
+      parsed_port <= 0 || parsed_port > 65535) {
+    g_server.send(400, "text/plain", "Invalid config values");
     return;
   }
 
@@ -97,7 +122,32 @@ static void handle_wifi_save() {
     final_pass = String(g_cfg->wifi_pass);
   }
 
-  if (!config_store_save_wifi(g_cfg, ssid.c_str(), final_pass.c_str())) {
+  String final_ntrip_pass = ntrip_pass;
+  if (final_ntrip_pass.length() == 0 && g_cfg != nullptr) {
+    final_ntrip_pass = String(g_cfg->ntrip_pass);
+  }
+
+  if (g_cfg == nullptr) {
+    g_server.send(500, "text/plain", "Config not initialized");
+    return;
+  }
+
+  strncpy(g_cfg->wifi_ssid, ssid.c_str(), sizeof(g_cfg->wifi_ssid) - 1);
+  g_cfg->wifi_ssid[sizeof(g_cfg->wifi_ssid) - 1] = '\0';
+  strncpy(g_cfg->wifi_pass, final_pass.c_str(), sizeof(g_cfg->wifi_pass) - 1);
+  g_cfg->wifi_pass[sizeof(g_cfg->wifi_pass) - 1] = '\0';
+
+  strncpy(g_cfg->ntrip_host, ntrip_host.c_str(), sizeof(g_cfg->ntrip_host) - 1);
+  g_cfg->ntrip_host[sizeof(g_cfg->ntrip_host) - 1] = '\0';
+  g_cfg->ntrip_port = static_cast<uint16_t>(parsed_port);
+  strncpy(g_cfg->ntrip_mountpoint, ntrip_mount.c_str(), sizeof(g_cfg->ntrip_mountpoint) - 1);
+  g_cfg->ntrip_mountpoint[sizeof(g_cfg->ntrip_mountpoint) - 1] = '\0';
+  strncpy(g_cfg->ntrip_user, ntrip_user.c_str(), sizeof(g_cfg->ntrip_user) - 1);
+  g_cfg->ntrip_user[sizeof(g_cfg->ntrip_user) - 1] = '\0';
+  strncpy(g_cfg->ntrip_pass, final_ntrip_pass.c_str(), sizeof(g_cfg->ntrip_pass) - 1);
+  g_cfg->ntrip_pass[sizeof(g_cfg->ntrip_pass) - 1] = '\0';
+
+  if (!config_store_save_all(g_cfg)) {
     g_server.send(500, "text/plain", "Failed to save config");
     return;
   }
@@ -122,7 +172,8 @@ void ApPortal::start_server_() {
   g_cfg = cfg_;
   g_server.on("/", HTTP_GET, handle_root);
   g_server.on("/status", HTTP_GET, handle_status);
-  g_server.on("/wifi", HTTP_POST, handle_wifi_save);
+  g_server.on("/config", HTTP_POST, handle_config_save);
+  g_server.on("/wifi", HTTP_POST, handle_config_save);
   g_server.on("/generate_204", HTTP_GET, handle_redirect_root);      // Android captive probe
   g_server.on("/hotspot-detect.html", HTTP_GET, handle_redirect_root);  // Apple captive probe
   g_server.on("/ncsi.txt", HTTP_GET, handle_redirect_root);          // Windows captive probe

@@ -34,6 +34,39 @@ static void set_defaults(RoverConfig* cfg) {
   copy_str(cfg->ntrip_pass, sizeof(cfg->ntrip_pass), NTRIP_PASS);
 }
 
+bool config_store_save_all(RoverConfig* cfg) {
+  if (cfg == nullptr || cfg->wifi_ssid[0] == '\0') {
+    return false;
+  }
+
+  Preferences prefs;
+  if (!prefs.begin(kNs, false)) {
+    LOGW("cfg: NVS write open failed");
+    return false;
+  }
+
+  bool ok = true;
+  ok = ok && prefs.putUChar(kKeyMarker, kMarkerVal) == 1;
+  ok = ok && prefs.putString("wifi_ssid", cfg->wifi_ssid) > 0;
+  ok = ok && prefs.putString("wifi_pass", cfg->wifi_pass) >= 0;
+
+  ok = ok && prefs.putString("ntrip_host", cfg->ntrip_host) >= 0;
+  ok = ok && prefs.putUShort("ntrip_port", cfg->ntrip_port) > 0;
+  ok = ok && prefs.putString("ntrip_mount", cfg->ntrip_mountpoint) >= 0;
+  ok = ok && prefs.putString("ntrip_user", cfg->ntrip_user) >= 0;
+  ok = ok && prefs.putString("ntrip_pass", cfg->ntrip_pass) >= 0;
+
+  prefs.end();
+
+  if (!ok) {
+    LOGW("cfg: save failed");
+    return false;
+  }
+
+  LOGI("cfg: full config saved to NVS");
+  return true;
+}
+
 void config_store_load(RoverConfig* cfg, bool* loaded_from_nvs) {
   if (cfg == nullptr) {
     return;
@@ -87,33 +120,7 @@ bool config_store_save_wifi(RoverConfig* cfg, const char* ssid, const char* pass
     return false;
   }
 
-  Preferences prefs;
-  if (!prefs.begin(kNs, false)) {
-    LOGW("cfg: NVS write open failed");
-    return false;
-  }
-
-  bool ok = true;
-  ok = ok && prefs.putUChar(kKeyMarker, kMarkerVal) == 1;
-  ok = ok && prefs.putString("wifi_ssid", ssid) > 0;
-  ok = ok && prefs.putString("wifi_pass", pass) >= 0;
-
-  // Persist current NTRIP values too, so phase-2 can reuse storage directly.
-  ok = ok && prefs.putString("ntrip_host", cfg->ntrip_host) >= 0;
-  ok = ok && prefs.putUShort("ntrip_port", cfg->ntrip_port) > 0;
-  ok = ok && prefs.putString("ntrip_mount", cfg->ntrip_mountpoint) >= 0;
-  ok = ok && prefs.putString("ntrip_user", cfg->ntrip_user) >= 0;
-  ok = ok && prefs.putString("ntrip_pass", cfg->ntrip_pass) >= 0;
-
-  prefs.end();
-
-  if (!ok) {
-    LOGW("cfg: save failed");
-    return false;
-  }
-
   copy_str(cfg->wifi_ssid, sizeof(cfg->wifi_ssid), ssid);
   copy_str(cfg->wifi_pass, sizeof(cfg->wifi_pass), pass);
-  LOGI("cfg: wifi saved to NVS");
-  return true;
+  return config_store_save_all(cfg);
 }

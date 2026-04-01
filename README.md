@@ -26,7 +26,7 @@ If the rover cannot join Wi-Fi for `WIFI_AP_FALLBACK_MS`, it starts an AP + conf
 
 - SSID: `Rover-Setup-xxxxxx`
 - URL: `http://192.168.4.1/`
-- Save Wi-Fi credentials and the rover reboots.
+- Save Wi-Fi + NTRIP settings and the rover reboots.
 
 ## Notes
 

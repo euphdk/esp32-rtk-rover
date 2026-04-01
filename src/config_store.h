@@ -16,3 +16,4 @@ struct RoverConfig {
 
 void config_store_load(RoverConfig* cfg, bool* loaded_from_nvs);
 bool config_store_save_wifi(RoverConfig* cfg, const char* ssid, const char* pass);
+bool config_store_save_all(RoverConfig* cfg);
