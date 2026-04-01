@@ -27,6 +27,47 @@ pio device monitor
 3. In QField (iOS), configure external GNSS as TCP client to ESP32 IP and port `10110` (or your configured port).
    You can try hostname `esp32-rover.local` if your network/client resolves mDNS.
 
+## Wiring (ESP32 <-> LC29H)
+
+Default firmware UART pins are:
+
+- `GNSS_RX_PIN = 16` (ESP32 RX)
+- `GNSS_TX_PIN = 17` (ESP32 TX)
+
+Wire serial cross-over:
+
+- ESP32 `TX2` (GPIO17) -> LC29H `RX`
+- ESP32 `RX2` (GPIO16) <- LC29H `TX`
+- ESP32 `GND` <-> LC29H `GND`
+
+Power wiring (as requested):
+
+- ESP32 board powered by USB
+- ESP32 `5V`/`VIN` pin -> LC29H `5V` input
+- ESP32 `GND` pin -> LC29H `GND`
+
+ASCII wiring sketch:
+
+```text
+USB Power
+   |
+   v
++-------------------------+
+| ESP32-WROOM-32 Dev Board|
+|                         |
+| GPIO17 (TX2) ---------> |------ LC29H RX
+| GPIO16 (RX2) <--------- |------ LC29H TX
+| GND ------------------- |------ LC29H GND
+| 5V / VIN -------------- |------ LC29H 5V
++-------------------------+
+```
+
+Notes:
+
+- Keep ESP32 and LC29H on common ground.
+- Keep UART wires short and clean for field reliability.
+- If your exact LC29H carrier has different pin labels, map by signal function (`TX`, `RX`, `GND`, `5V`).
+
 ## Web UI
 
 When connected in STA mode, the web UI is available on the rover IP:
