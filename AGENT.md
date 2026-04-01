@@ -46,10 +46,11 @@ pio run
 
 ## Git workflow rules (must follow)
 
-1. Commit after each completed change set.
+1. Keep changes grouped, coherent, and reviewable (avoid mixing unrelated concerns).
 2. Use focused commit messages with clear intent.
-3. Never run destructive git operations unless explicitly requested.
-4. If docs or behavior changed, update `README.md` in the same change set.
+3. Prepare work as a pull request targeting upstream (do not treat local-only history as final).
+4. Never run destructive git operations unless explicitly requested.
+5. If docs or behavior changed, update `README.md` in the same change set.
 
 ## Config and secrets
 
@@ -98,4 +99,4 @@ Before finishing a change:
 1. `pio run` passes.
 2. Logs/status remain coherent.
 3. No secret leakage in code/docs.
-4. Commit is created.
+4. Changes are ready to be submitted as a coherent PR toward upstream.
