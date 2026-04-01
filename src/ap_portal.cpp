@@ -61,6 +61,11 @@ static void handle_root() {
   g_server.send(200, "text/html", page);
 }
 
+static void handle_redirect_root() {
+  g_server.sendHeader("Location", "/", true);
+  g_server.send(302, "text/plain", "");
+}
+
 static void handle_status() {
   String out;
   out.reserve(256);
@@ -118,6 +123,10 @@ void ApPortal::start_server_() {
   g_server.on("/", HTTP_GET, handle_root);
   g_server.on("/status", HTTP_GET, handle_status);
   g_server.on("/wifi", HTTP_POST, handle_wifi_save);
+  g_server.on("/generate_204", HTTP_GET, handle_redirect_root);      // Android captive probe
+  g_server.on("/hotspot-detect.html", HTTP_GET, handle_redirect_root);  // Apple captive probe
+  g_server.on("/ncsi.txt", HTTP_GET, handle_redirect_root);          // Windows captive probe
+  g_server.onNotFound(handle_redirect_root);
   g_server.begin();
   server_active_ = true;
   LOGI("Portal server started: http://192.168.4.1:%u",
@@ -180,6 +189,13 @@ void ApPortal::tick(uint32_t now_ms, bool wifi_connected) {
     }
     prev_wifi_connected_ = true;
     return;
+  }
+
+  const bool wifi_config_missing =
+      (cfg_ == nullptr || cfg_->wifi_ssid[0] == '\0');
+  if (wifi_config_missing && !ap_active_) {
+    LOGW("Wi-Fi not configured, starting AP portal now");
+    start_ap_();
   }
 
   if (prev_wifi_connected_) {
