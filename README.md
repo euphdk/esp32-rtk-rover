@@ -40,7 +40,7 @@ Wire serial cross-over:
 - ESP32 `RX2` (GPIO16) <- LC29H `TX`
 - ESP32 `GND` <-> LC29H `GND`
 
-Power wiring (as requested):
+Power wiring:
 
 - ESP32 board powered by USB
 - ESP32 `5V`/`VIN` pin -> LC29H `5V` input
