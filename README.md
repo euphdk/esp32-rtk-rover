@@ -38,6 +38,7 @@ When connected in STA mode, the web UI is available on the rover IP:
 If the rover cannot join Wi-Fi for `WIFI_AP_FALLBACK_MS`, it starts an AP + config page:
 
 - SSID: `Rover-Setup-xxxxxx`
+- Default AP password: `changeme123` (from `WIFI_AP_PASS` in `src/config.h`)
 - URL: `http://192.168.4.1/`
 - `/status` and `/config` are both available in AP mode
 - Save Wi-Fi + NTRIP settings and the rover reboots
