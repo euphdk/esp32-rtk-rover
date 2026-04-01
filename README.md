@@ -22,11 +22,18 @@ pio device monitor
 3. In QField (iOS), configure external GNSS as TCP client to ESP32 IP and port `10110` (or your configured port).
    You can try hostname `esp32-rover.local` if your network/client resolves mDNS.
 
+If the rover cannot join Wi-Fi for `WIFI_AP_FALLBACK_MS`, it starts an AP + config page:
+
+- SSID: `Rover-Setup-xxxxxx`
+- URL: `http://192.168.4.1/`
+- Save Wi-Fi credentials and the rover reboots.
+
 ## Notes
 
 - `NTRIP_SEND_GGA` is enabled by default and can be disabled in `src/config.h`.
 - The server allows one QField TCP client in this prototype.
 - All config is hardcoded by design for phase-1 speed.
+- Wi-Fi credentials can be updated in field via AP web portal and are saved in NVS.
 - LC29H startup configuration commands are sent on every boot from `GNSS_STARTUP_COMMANDS` in `src/config.h`.
 - Startup commands are generated with automatic NMEA checksum (`$...*CS`).
 

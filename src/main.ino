@@ -3,7 +3,9 @@
 #include <WiFi.h>
 #include <string.h>
 
+#include "ap_portal.h"
 #include "config.h"
+#include "config_store.h"
 #include "gnss_uart.h"
 #include "gnss_startup.h"
 #include "log.h"
@@ -20,8 +22,10 @@ static NmeaParser g_nmea_parser;
 static NmeaServer g_nmea_server(NMEA_TCP_PORT);
 static MdnsLink g_mdns;
 static WifiLink g_wifi;
-static NtripClient g_ntrip(NTRIP_HOST, NTRIP_PORT, NTRIP_MOUNTPOINT, NTRIP_USER,
-                           NTRIP_PASS);
+static RoverConfig g_cfg;
+static bool g_cfg_from_nvs = false;
+static ApPortal g_ap_portal;
+static NtripClient* g_ntrip = nullptr;
 
 static char g_latest_gga[128];
 static uint32_t g_last_health_log_ms = 0;
@@ -192,7 +196,7 @@ static void tick_health(uint32_t now_ms) {
   g_last_health_log_ms = now_ms;
 
   g_status.wifi_connected = g_wifi.is_connected();
-  g_status.ntrip_connected = g_ntrip.is_streaming();
+  g_status.ntrip_connected = (g_ntrip != nullptr) ? g_ntrip->is_streaming() : false;
   g_status.qfield_client_connected = g_nmea_server.has_client();
 
   if (g_status.wifi_connected != g_prev_wifi_connected) {
@@ -226,9 +230,10 @@ static void tick_health(uint32_t now_ms) {
     hdop_frac = g_status.gnss_hdop_tenths % 10;
   }
 
-  LOGI("st wifi=%d mdns=%d ntrip=%d qf=%d rtcm=%lu rx=%lu nmea_in=%lu out=%lu bad=%lu "
+  LOGI("st wifi=%d ap=%d cfg=%s mdns=%d ntrip=%d qf=%d rtcm=%lu rx=%lu nmea_in=%lu out=%lu bad=%lu "
        "fix=%s sat=%u hdop=%d.%d age_nmea=%lus age_rtcm=%lus err=%s",
        static_cast<int>(g_status.wifi_connected),
+       static_cast<int>(g_ap_portal.ap_active()), g_cfg_from_nvs ? "nvs" : "default",
        static_cast<int>(g_mdns.is_started()),
        static_cast<int>(g_status.ntrip_connected),
        static_cast<int>(g_status.qfield_client_connected),
@@ -248,21 +253,27 @@ void setup() {
   delay(500);
 
   status_init();
+  config_store_load(&g_cfg, &g_cfg_from_nvs);
   memset(g_latest_gga, 0, sizeof(g_latest_gga));
 
-  LOGI("ESP32 GNSS/RTK rover prototype booting");
+  LOGI("ESP32 GNSS/RTK rover prototype booting (cfg=%s)",
+       g_cfg_from_nvs ? "nvs" : "default");
 
   g_gnss.begin(GNSS_UART_NUM, GNSS_BAUD, GNSS_RX_PIN, GNSS_TX_PIN);
   g_gnss_startup.begin(millis());
-  g_wifi.begin(WIFI_SSID, WIFI_PASS);
+  g_wifi.begin(g_cfg.wifi_ssid, g_cfg.wifi_pass);
+  g_ap_portal.begin(&g_cfg);
   g_mdns.begin(MDNS_HOSTNAME, MDNS_INSTANCE, NMEA_TCP_PORT);
-  g_ntrip.set_rtcm_sink(rtcm_sink);
+  g_ntrip = new NtripClient(g_cfg.ntrip_host, g_cfg.ntrip_port, g_cfg.ntrip_mountpoint,
+                            g_cfg.ntrip_user, g_cfg.ntrip_pass);
+  g_ntrip->set_rtcm_sink(rtcm_sink);
 }
 
 void loop() {
   const uint32_t now_ms = millis();
 
   g_wifi.tick(now_ms);
+  g_ap_portal.tick(now_ms, g_wifi.is_connected());
   if (MDNS_ENABLE) {
     g_mdns.tick(g_wifi.is_connected());
   }
@@ -278,7 +289,9 @@ void loop() {
 
   g_gnss_startup.tick(now_ms);
   tick_gnss_rx(now_ms);
-  g_ntrip.tick(now_ms, g_wifi.is_connected(), g_latest_gga);
+  if (g_ntrip != nullptr) {
+    g_ntrip->tick(now_ms, g_wifi.is_connected(), g_latest_gga);
+  }
   tick_health(now_ms);
 
   delay(2);

@@ -75,11 +75,20 @@ static const char* MDNS_INSTANCE = "ESP32 RTK Rover";
 // Timing / reconnect
 // ------------------------------
 static const uint32_t WIFI_RETRY_MS = 8000;
+static const uint32_t WIFI_AP_FALLBACK_MS = 20000;
 static const uint32_t NTRIP_RETRY_MIN_MS = 2000;
 static const uint32_t NTRIP_RETRY_MAX_MS = 60000;
 static const uint32_t NTRIP_HEADER_TIMEOUT_MS = 5000;
 static const uint32_t NTRIP_STALE_DATA_TIMEOUT_MS = 15000;
 static const uint32_t HEALTH_LOG_INTERVAL_MS = 2000;
+
+// ------------------------------
+// AP + Web config portal
+// ------------------------------
+static const bool WIFI_AP_CONFIG_ENABLE = true;
+static const char* WIFI_AP_SSID_PREFIX = "Rover-Setup";
+static const char* WIFI_AP_PASS = "changeme123";  // >= 8 chars
+static const uint16_t WIFI_AP_PORTAL_PORT = 80;
 
 // ------------------------------
 // Logging flags
