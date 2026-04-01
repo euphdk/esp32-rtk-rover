@@ -1,0 +1,80 @@
+#pragma once
+
+#include <stdint.h>
+#include <stddef.h>
+
+// ------------------------------
+// Wi-Fi (phone hotspot or field AP)
+// ------------------------------
+static const char* WIFI_SSID = "YOUR_HOTSPOT_SSID";
+static const char* WIFI_PASS = "YOUR_HOTSPOT_PASSWORD";
+
+// ------------------------------
+// NTRIP caster
+// ------------------------------
+static const char* NTRIP_HOST = "caster.example.com";
+static const uint16_t NTRIP_PORT = 2101;
+static const char* NTRIP_MOUNTPOINT = "MOUNTPOINT";
+static const char* NTRIP_USER = "username";
+static const char* NTRIP_PASS = "password";
+
+// Some casters (especially VRS) require periodic GGA uplink.
+static const bool NTRIP_SEND_GGA = true;
+static const uint32_t NTRIP_GGA_INTERVAL_MS = 10000;
+
+// ------------------------------
+// GNSS UART (LC29H(DA))
+// ------------------------------
+static const int GNSS_UART_NUM = 2;
+static const uint32_t GNSS_BAUD = 115200;
+static const int GNSS_RX_PIN = 16;  // ESP32 RX <- LC29H TX
+static const int GNSS_TX_PIN = 17;  // ESP32 TX -> LC29H RX
+
+// LC29H startup configuration (sent every boot).
+// Commands are provided WITHOUT '$' and WITHOUT checksum.
+// Firmware builds "$<command>*CS\r\n" automatically.
+static const bool GNSS_SEND_STARTUP_CONFIG = true;
+static const uint32_t GNSS_STARTUP_DELAY_MS = 1200;
+static const uint32_t GNSS_CMD_INTERVAL_MS = 250;
+
+// Recommended rover profile for this project:
+// - rover mode
+// - RTK enabled (absolute mode)
+// - NMEA + RTCM on UART1
+// - lean NMEA output set for QField
+static const char* const GNSS_STARTUP_COMMANDS[] = {
+    "PQTMCFGRCVRMODE,W,1",
+    "PQTMCFGRTK,W,1,1",
+    "PQTMCFGPROT,W,1,1,00000005,00000005",
+    "PQTMCFGMSGRATE,W,GGA,1",
+    "PQTMCFGMSGRATE,W,RMC,1",
+    "PQTMCFGMSGRATE,W,GSA,1",
+    "PQTMCFGMSGRATE,W,GSV,1",
+    "PQTMCFGMSGRATE,W,VTG,0",
+    "PQTMCFGMSGRATE,W,GLL,0",
+    "PQTMCFGMSGRATE,W,ZDA,0",
+};
+
+static const size_t GNSS_STARTUP_COMMAND_COUNT =
+    sizeof(GNSS_STARTUP_COMMANDS) / sizeof(GNSS_STARTUP_COMMANDS[0]);
+
+// ------------------------------
+// NMEA TCP output for QField
+// ------------------------------
+static const uint16_t NMEA_TCP_PORT = 10110;
+static const bool ALLOW_ONLY_ONE_TCP_CLIENT = true;
+
+// ------------------------------
+// Timing / reconnect
+// ------------------------------
+static const uint32_t WIFI_RETRY_MS = 8000;
+static const uint32_t NTRIP_RETRY_MIN_MS = 2000;
+static const uint32_t NTRIP_RETRY_MAX_MS = 60000;
+static const uint32_t NTRIP_HEADER_TIMEOUT_MS = 5000;
+static const uint32_t NTRIP_STALE_DATA_TIMEOUT_MS = 15000;
+static const uint32_t HEALTH_LOG_INTERVAL_MS = 2000;
+
+// ------------------------------
+// Logging flags
+// ------------------------------
+static const bool LOG_NMEA_RAW = false;
