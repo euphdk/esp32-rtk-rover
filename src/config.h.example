@@ -65,6 +65,13 @@ static const uint16_t NMEA_TCP_PORT = 10110;
 static const bool ALLOW_ONLY_ONE_TCP_CLIENT = true;
 
 // ------------------------------
+// mDNS (local discovery)
+// ------------------------------
+static const bool MDNS_ENABLE = true;
+static const char* MDNS_HOSTNAME = "esp32-rover";  // resolves as esp32-rover.local
+static const char* MDNS_INSTANCE = "ESP32 RTK Rover";
+
+// ------------------------------
 // Timing / reconnect
 // ------------------------------
 static const uint32_t WIFI_RETRY_MS = 8000;

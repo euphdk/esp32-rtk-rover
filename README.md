@@ -7,6 +7,7 @@ Bare-minimum Arduino prototype for this pipeline:
 3. ESP32 forwards RTCM to LC29H(DA) over UART.
 4. ESP32 reads NMEA from LC29H(DA).
 5. ESP32 serves NMEA over TCP for QField (single client).
+6. ESP32 advertises `_nmea-0183._tcp` via mDNS (`esp32-rover.local` by default).
 
 ## Quick start
 
@@ -19,6 +20,7 @@ pio device monitor
 ```
 
 3. In QField (iOS), configure external GNSS as TCP client to ESP32 IP and port `10110` (or your configured port).
+   You can try hostname `esp32-rover.local` if your network/client resolves mDNS.
 
 ## Notes
 

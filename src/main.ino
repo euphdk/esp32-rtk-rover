@@ -7,6 +7,7 @@
 #include "gnss_uart.h"
 #include "gnss_startup.h"
 #include "log.h"
+#include "mdns_link.h"
 #include "nmea_parser.h"
 #include "nmea_server.h"
 #include "ntrip_client.h"
@@ -17,6 +18,7 @@ static GnssUart g_gnss;
 static GnssStartup g_gnss_startup(&g_gnss);
 static NmeaParser g_nmea_parser;
 static NmeaServer g_nmea_server(NMEA_TCP_PORT);
+static MdnsLink g_mdns;
 static WifiLink g_wifi;
 static NtripClient g_ntrip(NTRIP_HOST, NTRIP_PORT, NTRIP_MOUNTPOINT, NTRIP_USER,
                            NTRIP_PASS);
@@ -224,9 +226,10 @@ static void tick_health(uint32_t now_ms) {
     hdop_frac = g_status.gnss_hdop_tenths % 10;
   }
 
-  LOGI("st wifi=%d ntrip=%d qf=%d rtcm=%lu rx=%lu nmea_in=%lu out=%lu bad=%lu "
+  LOGI("st wifi=%d mdns=%d ntrip=%d qf=%d rtcm=%lu rx=%lu nmea_in=%lu out=%lu bad=%lu "
        "fix=%s sat=%u hdop=%d.%d age_nmea=%lus age_rtcm=%lus err=%s",
        static_cast<int>(g_status.wifi_connected),
+       static_cast<int>(g_mdns.is_started()),
        static_cast<int>(g_status.ntrip_connected),
        static_cast<int>(g_status.qfield_client_connected),
        static_cast<unsigned long>(g_status.rtcm_bytes_in),
@@ -252,6 +255,7 @@ void setup() {
   g_gnss.begin(GNSS_UART_NUM, GNSS_BAUD, GNSS_RX_PIN, GNSS_TX_PIN);
   g_gnss_startup.begin(millis());
   g_wifi.begin(WIFI_SSID, WIFI_PASS);
+  g_mdns.begin(MDNS_HOSTNAME, MDNS_INSTANCE, NMEA_TCP_PORT);
   g_ntrip.set_rtcm_sink(rtcm_sink);
 }
 
@@ -259,6 +263,9 @@ void loop() {
   const uint32_t now_ms = millis();
 
   g_wifi.tick(now_ms);
+  if (MDNS_ENABLE) {
+    g_mdns.tick(g_wifi.is_connected());
+  }
 
   if (!g_nmea_server_started && g_wifi.is_connected()) {
     g_nmea_server.begin();
