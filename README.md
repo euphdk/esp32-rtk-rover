@@ -26,14 +26,17 @@ When connected in STA mode, the config/status page is also available on the rove
 
 - `http://<rover_sta_ip>/`
 - `http://esp32-rover.local/` (if mDNS resolves)
+- `http://<rover_sta_ip>/status` shows formatted live status (auto-refresh every 2s).
+- `http://<rover_sta_ip>/config` shows editable Wi-Fi + NTRIP config.
 
 If the rover cannot join Wi-Fi for `WIFI_AP_FALLBACK_MS`, it starts an AP + config page:
 
 - SSID: `Rover-Setup-xxxxxx`
 - URL: `http://192.168.4.1/`
 - Save Wi-Fi + NTRIP settings and the rover reboots.
-- Page shows masked Wi-Fi/NTRIP passwords and live health status line.
+- Status page shows masked Wi-Fi/NTRIP passwords and formatted live telemetry.
 - Includes delete actions for saved Wi-Fi or saved NTRIP (each reboots).
+- Config page includes a non-reboot NTRIP connectivity test button.
 
 ## Notes
 

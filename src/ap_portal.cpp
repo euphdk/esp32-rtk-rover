@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <WebServer.h>
 #include <WiFi.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "config.h"
@@ -12,6 +13,31 @@
 
 static WebServer g_server(WIFI_AP_PORTAL_PORT);
 static RoverConfig* g_cfg = nullptr;
+
+static const char kB64Table[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+static String base64_encode(const char* in) {
+  String out;
+  if (in == nullptr) {
+    return out;
+  }
+  size_t len = strlen(in);
+  out.reserve(((len + 2) / 3) * 4);
+
+  for (size_t i = 0; i < len; i += 3) {
+    uint32_t octet_a = static_cast<uint8_t>(in[i]);
+    uint32_t octet_b = (i + 1 < len) ? static_cast<uint8_t>(in[i + 1]) : 0;
+    uint32_t octet_c = (i + 2 < len) ? static_cast<uint8_t>(in[i + 2]) : 0;
+    uint32_t triple = (octet_a << 16) | (octet_b << 8) | octet_c;
+
+    out += kB64Table[(triple >> 18) & 0x3F];
+    out += kB64Table[(triple >> 12) & 0x3F];
+    out += (i + 1 < len) ? kB64Table[(triple >> 6) & 0x3F] : '=';
+    out += (i + 2 < len) ? kB64Table[triple & 0x3F] : '=';
+  }
+  return out;
+}
 
 static String html_escape(const String& in) {
   String out;
@@ -27,6 +53,20 @@ static String html_escape(const String& in) {
   return out;
 }
 
+static String json_escape(const String& in) {
+  String out;
+  out.reserve(in.length() + 16);
+  for (size_t i = 0; i < in.length(); ++i) {
+    char c = in[i];
+    if (c == '\\') out += "\\\\";
+    else if (c == '"') out += "\\\"";
+    else if (c == '\n') out += "\\n";
+    else if (c == '\r') out += "\\r";
+    else out += c;
+  }
+  return out;
+}
+
 static String masked_secret(const char* raw) {
   if (raw == nullptr || raw[0] == '\0') {
     return "(empty)";
@@ -37,19 +77,19 @@ static String masked_secret(const char* raw) {
 static const char* fix_quality_text(uint8_t q) {
   switch (q) {
     case 0:
-      return "NO_FIX";
+      return "No fix";
     case 1:
       return "SPS";
     case 2:
       return "DGPS";
     case 4:
-      return "RTK_FIX";
+      return "RTK fixed";
     case 5:
-      return "RTK_FLOAT";
+      return "RTK float";
     case 6:
-      return "DR";
+      return "Dead reckoning";
     default:
-      return "OTHER";
+      return "Other";
   }
 }
 
@@ -67,7 +107,7 @@ static String health_line() {
     hdop_frac = g_status.gnss_hdop_tenths % 10;
   }
 
-  char buf[320];
+  char buf[360];
   snprintf(
       buf, sizeof(buf),
       "st wifi=%d ap=%d cfg=%s mdns=%d ntrip=%d qf=%d rtcm=%lu rx=%lu nmea_in=%lu out=%lu bad=%lu tlong=%lu "
@@ -80,14 +120,170 @@ static String health_line() {
       static_cast<unsigned long>(g_status.nmea_lines_in),
       static_cast<unsigned long>(g_status.nmea_lines_out),
       static_cast<unsigned long>(g_status.nmea_bad_checksum),
-      static_cast<unsigned long>(g_status.nmea_too_long),
-      fix_quality_text(g_status.gnss_fix_quality), static_cast<unsigned>(g_status.gnss_sats_used),
-      hdop_whole, hdop_frac, static_cast<unsigned long>(nmea_age_s),
-      static_cast<unsigned long>(rtcm_age_s), g_status.last_error);
+      static_cast<unsigned long>(g_status.nmea_too_long), fix_quality_text(g_status.gnss_fix_quality),
+      static_cast<unsigned>(g_status.gnss_sats_used), hdop_whole, hdop_frac,
+      static_cast<unsigned long>(nmea_age_s), static_cast<unsigned long>(rtcm_age_s),
+      g_status.last_error);
   return String(buf);
 }
 
-static void handle_root() {
+static String common_head(const char* title) {
+  String page;
+  page.reserve(1000);
+  page += "<!doctype html><html><head><meta charset='utf-8'>";
+  page += "<meta name='viewport' content='width=device-width,initial-scale=1'>";
+  page += "<title>";
+  page += title;
+  page += "</title>";
+  page += "<style>";
+  page += "body{font-family:Arial,sans-serif;margin:16px;max-width:900px;color:#1f2937;}";
+  page += "nav a{margin-right:14px;text-decoration:none;color:#0b66c3;font-weight:700;}";
+  page += "h2{margin-bottom:6px;}h3{margin:18px 0 10px;}";
+  page += "label{display:block;margin-top:12px;font-weight:600;}";
+  page += "input{width:100%;padding:10px;margin-top:4px;box-sizing:border-box;}";
+  page += "button{margin-top:12px;padding:10px 14px;}";
+  page += ".muted{color:#666;font-size:0.92em;}";
+  page += ".card{background:#f7f9fb;border:1px solid #dbe3ea;border-radius:8px;padding:12px;margin:10px 0;}";
+  page += "table{width:100%;border-collapse:collapse;}th,td{padding:8px;border-bottom:1px solid #e6ebf0;text-align:left;}";
+  page += "pre{white-space:pre-wrap;background:#f4f4f4;padding:10px;border-radius:6px;}";
+  page += "</style></head><body>";
+  page += "<h2>ESP32 RTK Rover</h2>";
+  page += "<nav><a href='/status'>Status</a><a href='/config'>Config</a></nav>";
+  return page;
+}
+
+static void handle_redirect_status() {
+  g_server.sendHeader("Location", "/status", true);
+  g_server.send(302, "text/plain", "");
+}
+
+static void handle_api_status() {
+  const uint32_t now_ms = millis();
+  const uint32_t nmea_age_s =
+      (g_status.last_nmea_ms == 0) ? 0 : ((now_ms - g_status.last_nmea_ms) / 1000);
+  const uint32_t rtcm_age_s =
+      (g_status.last_rtcm_ms == 0) ? 0 : ((now_ms - g_status.last_rtcm_ms) / 1000);
+  int hdop_whole = -1;
+  int hdop_frac = 0;
+  if (g_status.gnss_hdop_tenths >= 0) {
+    hdop_whole = g_status.gnss_hdop_tenths / 10;
+    hdop_frac = g_status.gnss_hdop_tenths % 10;
+  }
+
+  String out;
+  out.reserve(900);
+  out += "{";
+  out += "\"wifi_connected\":";
+  out += g_status.wifi_connected ? "true" : "false";
+  out += ",\"ap_active\":";
+  out += g_status.ap_active ? "true" : "false";
+  out += ",\"mdns_started\":";
+  out += g_status.mdns_started ? "true" : "false";
+  out += ",\"cfg_source\":\"";
+  out += g_status.cfg_from_nvs ? "nvs" : "default";
+  out += "\",\"ntrip_connected\":";
+  out += g_status.ntrip_connected ? "true" : "false";
+  out += ",\"qfield_connected\":";
+  out += g_status.qfield_client_connected ? "true" : "false";
+  out += ",\"sta_ip\":\"";
+  out += WiFi.localIP().toString();
+  out += "\",\"ap_ip\":\"";
+  out += WiFi.softAPIP().toString();
+  out += "\",\"rssi\":";
+  out += String(WiFi.RSSI());
+  out += ",\"rtcm_bytes\":";
+  out += String(g_status.rtcm_bytes_in);
+  out += ",\"gnss_rx_bytes\":";
+  out += String(g_status.gnss_rx_bytes);
+  out += ",\"nmea_in\":";
+  out += String(g_status.nmea_lines_in);
+  out += ",\"nmea_out\":";
+  out += String(g_status.nmea_lines_out);
+  out += ",\"nmea_bad_checksum\":";
+  out += String(g_status.nmea_bad_checksum);
+  out += ",\"nmea_too_long\":";
+  out += String(g_status.nmea_too_long);
+  out += ",\"fix_quality\":\"";
+  out += fix_quality_text(g_status.gnss_fix_quality);
+  out += "\",\"satellites\":";
+  out += String(g_status.gnss_sats_used);
+  out += ",\"hdop\":\"";
+  out += String(hdop_whole);
+  out += ".";
+  out += String(hdop_frac);
+  out += "\",\"nmea_age_s\":";
+  out += String(nmea_age_s);
+  out += ",\"rtcm_age_s\":";
+  out += String(rtcm_age_s);
+  out += ",\"last_error\":\"";
+  out += json_escape(String(g_status.last_error));
+  out += "\",\"health_line\":\"";
+  out += json_escape(health_line());
+  out += "\"}";
+
+  g_server.send(200, "application/json", out);
+}
+
+static void handle_status_page() {
+  String page = common_head("Rover Status");
+  page.reserve(5000);
+  page += "<p class='muted'>Auto-updates every 2 seconds.</p>";
+
+  page += "<div class='card'><b>Connectivity</b><table>";
+  page += "<tr><th>Wi-Fi STA</th><td id='wifi_connected'>-</td></tr>";
+  page += "<tr><th>AP Portal</th><td id='ap_active'>-</td></tr>";
+  page += "<tr><th>mDNS</th><td id='mdns_started'>-</td></tr>";
+  page += "<tr><th>Config Source</th><td id='cfg_source'>-</td></tr>";
+  page += "<tr><th>STA IP</th><td id='sta_ip'>-</td></tr>";
+  page += "<tr><th>AP IP</th><td id='ap_ip'>-</td></tr>";
+  page += "<tr><th>RSSI (dBm)</th><td id='rssi'>-</td></tr></table></div>";
+
+  page += "<div class='card'><b>RTK / Client</b><table>";
+  page += "<tr><th>NTRIP Stream</th><td id='ntrip_connected'>-</td></tr>";
+  page += "<tr><th>QField TCP Client</th><td id='qfield_connected'>-</td></tr>";
+  page += "<tr><th>RTCM Bytes</th><td id='rtcm_bytes'>-</td></tr>";
+  page += "<tr><th>RTCM Data Age</th><td id='rtcm_age_s'>-</td></tr></table></div>";
+
+  page += "<div class='card'><b>GNSS / NMEA</b><table>";
+  page += "<tr><th>Fix Quality</th><td id='fix_quality'>-</td></tr>";
+  page += "<tr><th>Satellites Used</th><td id='satellites'>-</td></tr>";
+  page += "<tr><th>HDOP</th><td id='hdop'>-</td></tr>";
+  page += "<tr><th>GNSS RX Bytes</th><td id='gnss_rx_bytes'>-</td></tr>";
+  page += "<tr><th>NMEA In</th><td id='nmea_in'>-</td></tr>";
+  page += "<tr><th>NMEA Out</th><td id='nmea_out'>-</td></tr>";
+  page += "<tr><th>NMEA Bad Checksum</th><td id='nmea_bad_checksum'>-</td></tr>";
+  page += "<tr><th>NMEA Too Long</th><td id='nmea_too_long'>-</td></tr>";
+  page += "<tr><th>NMEA Data Age</th><td id='nmea_age_s'>-</td></tr></table></div>";
+
+  page += "<div class='card'><b>Errors</b><table>";
+  page += "<tr><th>Last Error</th><td id='last_error'>-</td></tr></table>";
+  page += "<pre id='health_line'>-</pre></div>";
+
+  page += "<script>";
+  page += "function setText(id,val){const el=document.getElementById(id);if(el)el.textContent=val;}";
+  page += "function yesNo(v){return v?'Connected':'Not connected';}";
+  page += "async function refreshStatus(){";
+  page += "try{const r=await fetch('/api/status',{cache:'no-store'});if(!r.ok)return;const s=await r.json();";
+  page += "setText('wifi_connected',yesNo(s.wifi_connected));";
+  page += "setText('ap_active',s.ap_active?'Active':'Off');";
+  page += "setText('mdns_started',s.mdns_started?'Started':'Stopped');";
+  page += "setText('cfg_source',s.cfg_source);";
+  page += "setText('sta_ip',s.sta_ip);setText('ap_ip',s.ap_ip);setText('rssi',s.rssi);";
+  page += "setText('ntrip_connected',yesNo(s.ntrip_connected));";
+  page += "setText('qfield_connected',s.qfield_connected?'Connected':'Disconnected');";
+  page += "setText('rtcm_bytes',s.rtcm_bytes);setText('rtcm_age_s',s.rtcm_age_s+' s');";
+  page += "setText('fix_quality',s.fix_quality);setText('satellites',s.satellites);setText('hdop',s.hdop);";
+  page += "setText('gnss_rx_bytes',s.gnss_rx_bytes);setText('nmea_in',s.nmea_in);setText('nmea_out',s.nmea_out);";
+  page += "setText('nmea_bad_checksum',s.nmea_bad_checksum);setText('nmea_too_long',s.nmea_too_long);";
+  page += "setText('nmea_age_s',s.nmea_age_s+' s');setText('last_error',s.last_error);setText('health_line',s.health_line);";
+  page += "}catch(e){setText('last_error','status fetch failed');}}";
+  page += "refreshStatus();setInterval(refreshStatus,2000);";
+  page += "</script></body></html>";
+
+  g_server.send(200, "text/html", page);
+}
+
+static void handle_config_page() {
   String ssid = (g_cfg != nullptr) ? String(g_cfg->wifi_ssid) : String("");
   String wifi_pass_mask = (g_cfg != nullptr) ? masked_secret(g_cfg->wifi_pass) : String("(empty)");
   String user = (g_cfg != nullptr) ? String(g_cfg->ntrip_user) : String("");
@@ -95,91 +291,53 @@ static void handle_root() {
   String host = (g_cfg != nullptr) ? String(g_cfg->ntrip_host) : String("");
   String port = (g_cfg != nullptr) ? String(g_cfg->ntrip_port) : String("");
   String mount = (g_cfg != nullptr) ? String(g_cfg->ntrip_mountpoint) : String("");
-  String stat = health_line();
 
-  String page;
-  page.reserve(4200);
-  page += "<!doctype html><html><head><meta charset='utf-8'>";
-  page += "<meta name='viewport' content='width=device-width,initial-scale=1'>";
-  page += "<title>Rover Setup</title>";
-  page += "<style>body{font-family:Arial,sans-serif;margin:16px;max-width:560px;}";
-  page += "label{display:block;margin-top:12px;font-weight:600;}";
-  page += "input{width:100%;padding:10px;margin-top:4px;box-sizing:border-box;}";
-  page += "button{margin-top:16px;padding:10px 14px;}small{color:#666;}</style></head><body>";
-  page += "<h2>ESP32 RTK Rover Setup</h2>";
-  page += "<p>Configure Wi-Fi and NTRIP caster settings.</p>";
-  page += "<h3>Current Config</h3>";
-  page += "<p><b>Wi-Fi SSID:</b> ";
-  page += html_escape(ssid);
-  page += "<br><b>Wi-Fi Password:</b> ";
-  page += html_escape(wifi_pass_mask);
-  page += "<br><b>NTRIP Host:</b> ";
-  page += html_escape(host);
-  page += "<br><b>NTRIP Port:</b> ";
-  page += html_escape(port);
-  page += "<br><b>NTRIP Mount:</b> ";
-  page += html_escape(mount);
-  page += "<br><b>NTRIP User:</b> ";
-  page += html_escape(user);
-  page += "<br><b>NTRIP Password:</b> ";
-  page += html_escape(ntrip_pass_mask);
-  page += "</p>";
+  String page = common_head("Rover Config");
+  page.reserve(5200);
+  page += "<p class='muted'>Edit settings below. Saving triggers reboot.</p>";
 
-  page += "<h3>Live Status</h3><pre style='white-space:pre-wrap;background:#f4f4f4;padding:10px;border-radius:4px'>";
-  page += html_escape(stat);
-  page += "</pre>";
+  page += "<div class='card'><h3>Current Saved Values</h3>";
+  page += "<table>";
+  page += "<tr><th>Wi-Fi SSID</th><td>" + html_escape(ssid) + "</td></tr>";
+  page += "<tr><th>Wi-Fi Password</th><td>" + html_escape(wifi_pass_mask) + "</td></tr>";
+  page += "<tr><th>NTRIP Host</th><td>" + html_escape(host) + "</td></tr>";
+  page += "<tr><th>NTRIP Port</th><td>" + html_escape(port) + "</td></tr>";
+  page += "<tr><th>NTRIP Mountpoint</th><td>" + html_escape(mount) + "</td></tr>";
+  page += "<tr><th>NTRIP User</th><td>" + html_escape(user) + "</td></tr>";
+  page += "<tr><th>NTRIP Password</th><td>" + html_escape(ntrip_pass_mask) + "</td></tr>";
+  page += "</table></div>";
 
-  page += "<form method='POST' action='/config'>";
-  page += "<label>Wi-Fi SSID</label><input name='ssid' maxlength='32' value='";
-  page += html_escape(ssid);
-  page += "' required>";
-  page += "<label>Wi-Fi Password</label><input name='pass' maxlength='64' type='password' value=''>";
-  page += "<small>Leave blank to keep current saved password.</small>";
-  page += "<h3 style='margin-top:20px'>NTRIP</h3>";
-  page += "<label>NTRIP Host</label><input name='ntrip_host' maxlength='63' value='";
-  page += html_escape(host);
-  page += "' required>";
-  page += "<label>NTRIP Port</label><input name='ntrip_port' type='number' min='1' max='65535' value='";
-  page += html_escape(port);
-  page += "' required>";
-  page += "<label>Mountpoint</label><input name='ntrip_mount' maxlength='63' value='";
-  page += html_escape(mount);
-  page += "' required>";
-  page += "<label>NTRIP User</label><input name='ntrip_user' maxlength='63' value='";
-  page += html_escape(user);
-  page += "'>";
-  page += "<label>NTRIP Password</label><input name='ntrip_pass' maxlength='63' type='password' value=''>";
-  page += "<small>Leave blank to keep current saved NTRIP password.</small>";
-  page += "<button type='submit'>Save Config and Reboot</button></form>";
-  page += "<h3 style='margin-top:20px'>Danger Zone</h3>";
+  page += "<div class='card'><h3>Edit Configuration</h3>";
+  page += "<form id='cfgForm' method='POST' action='/config'>";
+  page += "<label>Wi-Fi SSID</label><input id='ssid' name='ssid' maxlength='32' value='" + html_escape(ssid) + "' required>";
+  page += "<label>Wi-Fi Password</label><input id='pass' name='pass' maxlength='64' type='password' value=''>";
+  page += "<div class='muted'>Leave blank to keep current saved Wi-Fi password.</div>";
+  page += "<label>NTRIP Host (leave host+mount blank to disable)</label><input id='ntrip_host' name='ntrip_host' maxlength='63' value='" + html_escape(host) + "'>";
+  page += "<label>NTRIP Port</label><input id='ntrip_port' name='ntrip_port' type='number' min='1' max='65535' value='" + html_escape(port) + "' required>";
+  page += "<label>NTRIP Mountpoint</label><input id='ntrip_mount' name='ntrip_mount' maxlength='63' value='" + html_escape(mount) + "'>";
+  page += "<label>NTRIP User</label><input id='ntrip_user' name='ntrip_user' maxlength='63' value='" + html_escape(user) + "'>";
+  page += "<label>NTRIP Password</label><input id='ntrip_pass' name='ntrip_pass' maxlength='63' type='password' value=''>";
+  page += "<div class='muted'>Leave blank to keep current saved NTRIP password.</div>";
+  page += "<button type='submit'>Save Config and Reboot</button>";
+  page += "<button type='button' id='testBtn'>Test NTRIP Connection (No Reboot)</button>";
+  page += "</form><pre id='testResult'>No test yet.</pre></div>";
+
+  page += "<div class='card'><h3>Danger Zone</h3>";
   page += "<form method='POST' action='/delete_wifi' onsubmit='return confirm(\"Delete saved Wi-Fi and reboot?\");'>";
   page += "<button type='submit'>Delete Saved Wi-Fi</button></form>";
   page += "<form method='POST' action='/delete_ntrip' onsubmit='return confirm(\"Delete saved NTRIP and reboot?\");'>";
-  page += "<button type='submit'>Delete Saved NTRIP</button></form>";
-  page += "<p><small>AP IP: 192.168.4.1</small></p></body></html>";
+  page += "<button type='submit'>Delete Saved NTRIP</button></form></div>";
+
+  page += "<script>";
+  page += "document.getElementById('testBtn').addEventListener('click', async ()=>{";
+  page += "const p=new URLSearchParams();";
+  page += "['ntrip_host','ntrip_port','ntrip_mount','ntrip_user','ntrip_pass'].forEach(id=>p.append(id,document.getElementById(id).value));";
+  page += "const out=document.getElementById('testResult');out.textContent='Testing...';";
+  page += "try{const r=await fetch('/api/ntrip_test',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()});";
+  page += "const t=await r.text();out.textContent=t;}catch(e){out.textContent='Test failed: '+e;}});";
+  page += "</script></body></html>";
 
   g_server.send(200, "text/html", page);
-}
-
-static void handle_redirect_root() {
-  g_server.sendHeader("Location", "/", true);
-  g_server.send(302, "text/plain", "");
-}
-
-static void handle_status() {
-  String out;
-  out.reserve(256);
-  out += "{";
-  out += "\"sta_connected\":";
-  out += (WiFi.status() == WL_CONNECTED) ? "true" : "false";
-  out += ",\"sta_ip\":\"";
-  out += WiFi.localIP().toString();
-  out += "\",\"ap_ip\":\"";
-  out += WiFi.softAPIP().toString();
-  out += "\",\"health\":\"";
-  out += health_line();
-  out += "\"}";
-  g_server.send(200, "application/json", out);
 }
 
 static void handle_delete_wifi() {
@@ -244,26 +402,25 @@ static void handle_config_save() {
   const bool ntrip_partial = (ntrip_host.length() == 0) != (ntrip_mount.length() == 0);
 
   if (ssid.length() == 0 || ssid.length() > 32 || pass.length() > 64 ||
-      ntrip_host.length() > 63 || ntrip_mount.length() > 63 ||
-      ntrip_user.length() > 63 || ntrip_pass.length() > 63 ||
-      parsed_port <= 0 || parsed_port > 65535 || ntrip_partial) {
+      ntrip_host.length() > 63 || ntrip_mount.length() > 63 || ntrip_user.length() > 63 ||
+      ntrip_pass.length() > 63 || parsed_port <= 0 || parsed_port > 65535 || ntrip_partial) {
     g_server.send(400, "text/plain", "Invalid config values");
     return;
-  }
-
-  String final_pass = pass;
-  if (final_pass.length() == 0 && g_cfg != nullptr) {
-    final_pass = String(g_cfg->wifi_pass);
-  }
-
-  String final_ntrip_pass = ntrip_pass;
-  if (final_ntrip_pass.length() == 0 && g_cfg != nullptr) {
-    final_ntrip_pass = String(g_cfg->ntrip_pass);
   }
 
   if (g_cfg == nullptr) {
     g_server.send(500, "text/plain", "Config not initialized");
     return;
+  }
+
+  String final_pass = pass;
+  if (final_pass.length() == 0) {
+    final_pass = String(g_cfg->wifi_pass);
+  }
+
+  String final_ntrip_pass = ntrip_pass;
+  if (final_ntrip_pass.length() == 0) {
+    final_ntrip_pass = String(g_cfg->ntrip_pass);
   }
 
   strncpy(g_cfg->wifi_ssid, ssid.c_str(), sizeof(g_cfg->wifi_ssid) - 1);
@@ -286,10 +443,106 @@ static void handle_config_save() {
     return;
   }
 
-  g_server.send(200, "text/html",
-                "<html><body><h3>Saved. Rebooting...</h3></body></html>");
+  g_server.send(200, "text/html", "<html><body><h3>Saved. Rebooting...</h3></body></html>");
   delay(600);
   ESP.restart();
+}
+
+static void handle_api_ntrip_test() {
+  String host = g_server.arg("ntrip_host");
+  String port_s = g_server.arg("ntrip_port");
+  String mount = g_server.arg("ntrip_mount");
+  String user = g_server.arg("ntrip_user");
+  String pass = g_server.arg("ntrip_pass");
+
+  host.trim();
+  port_s.trim();
+  mount.trim();
+  user.trim();
+  pass.trim();
+
+  if (host.length() == 0 || mount.length() == 0) {
+    g_server.send(400, "text/plain", "NTRIP test failed: host and mountpoint are required.");
+    return;
+  }
+
+  long port_l = port_s.toInt();
+  if (port_l <= 0 || port_l > 65535) {
+    g_server.send(400, "text/plain", "NTRIP test failed: invalid port.");
+    return;
+  }
+
+  const char* mount_ptr = mount.c_str();
+  if (mount_ptr[0] == '/') {
+    mount_ptr++;
+  }
+
+  String auth_input = user + ":" + pass;
+  String auth_b64 = base64_encode(auth_input.c_str());
+
+  WiFiClient test_client;
+  test_client.setTimeout(2);
+  uint32_t start_ms = millis();
+  if (!test_client.connect(host.c_str(), static_cast<uint16_t>(port_l))) {
+    g_server.send(200, "text/plain", "NTRIP test failed: socket connect failed.");
+    return;
+  }
+
+  String req;
+  req.reserve(512);
+  req += "GET /";
+  req += mount_ptr;
+  req += " HTTP/1.1\r\n";
+  req += "Host: ";
+  req += host;
+  req += ":";
+  req += String(port_l);
+  req += "\r\n";
+  req += "Ntrip-Version: Ntrip/2.0\r\n";
+  req += "User-Agent: NTRIP ESP32-Rover/Test\r\n";
+  req += "Accept: */*\r\n";
+  req += "Connection: close\r\n";
+  req += "Authorization: Basic ";
+  req += auth_b64;
+  req += "\r\n\r\n";
+  test_client.print(req);
+
+  String rx;
+  rx.reserve(200);
+  const uint32_t deadline = millis() + 3000;
+  while (millis() < deadline && rx.length() < 180) {
+    while (test_client.available() > 0 && rx.length() < 180) {
+      char c = static_cast<char>(test_client.read());
+      if (c >= 32 && c <= 126) {
+        rx += c;
+      } else if (c == '\r' || c == '\n') {
+        rx += ' ';
+      }
+    }
+    delay(5);
+  }
+  test_client.stop();
+
+  const bool ok = (rx.indexOf("ICY 200") >= 0) || (rx.indexOf(" 200 ") >= 0);
+  const uint32_t elapsed = millis() - start_ms;
+  String msg;
+  msg.reserve(320);
+  if (ok) {
+    msg += "NTRIP test OK (";
+    msg += String(elapsed);
+    msg += " ms). Header: ";
+  } else {
+    msg += "NTRIP test failed (";
+    msg += String(elapsed);
+    msg += " ms). Header: ";
+  }
+  if (rx.length() == 0) {
+    msg += "(no response bytes)";
+  } else {
+    msg += rx;
+  }
+
+  g_server.send(200, "text/plain", msg);
 }
 
 void ApPortal::begin(RoverConfig* cfg) {
@@ -304,20 +557,24 @@ void ApPortal::start_server_() {
   }
 
   g_cfg = cfg_;
-  g_server.on("/", HTTP_GET, handle_root);
-  g_server.on("/status", HTTP_GET, handle_status);
+  g_server.on("/", HTTP_GET, handle_redirect_status);
+  g_server.on("/config", HTTP_GET, handle_config_page);
+  g_server.on("/status", HTTP_GET, handle_status_page);
+  g_server.on("/api/status", HTTP_GET, handle_api_status);
+  g_server.on("/api/ntrip_test", HTTP_POST, handle_api_ntrip_test);
   g_server.on("/config", HTTP_POST, handle_config_save);
   g_server.on("/wifi", HTTP_POST, handle_config_save);
   g_server.on("/delete_wifi", HTTP_POST, handle_delete_wifi);
   g_server.on("/delete_ntrip", HTTP_POST, handle_delete_ntrip);
-  g_server.on("/generate_204", HTTP_GET, handle_redirect_root);      // Android captive probe
-  g_server.on("/hotspot-detect.html", HTTP_GET, handle_redirect_root);  // Apple captive probe
-  g_server.on("/ncsi.txt", HTTP_GET, handle_redirect_root);          // Windows captive probe
-  g_server.onNotFound(handle_redirect_root);
+
+  g_server.on("/generate_204", HTTP_GET, handle_redirect_status);
+  g_server.on("/hotspot-detect.html", HTTP_GET, handle_redirect_status);
+  g_server.on("/ncsi.txt", HTTP_GET, handle_redirect_status);
+  g_server.onNotFound(handle_redirect_status);
+
   g_server.begin();
   server_active_ = true;
-  LOGI("Portal server started: http://192.168.4.1:%u",
-       static_cast<unsigned>(WIFI_AP_PORTAL_PORT));
+  LOGI("Portal server started");
 }
 
 void ApPortal::stop_server_() {
@@ -357,7 +614,6 @@ void ApPortal::stop_ap_() {
     return;
   }
 
-  stop_server_();
   WiFi.softAPdisconnect(true);
   ap_active_ = false;
   LOGI("AP stopped");
@@ -372,7 +628,6 @@ void ApPortal::tick(uint32_t now_ms, bool wifi_connected) {
     if (!server_active_) {
       start_server_();
     }
-    wifi_down_since_ms_ = 0;
     if (ap_active_) {
       stop_ap_();
       WiFi.mode(WIFI_STA);
@@ -381,26 +636,26 @@ void ApPortal::tick(uint32_t now_ms, bool wifi_connected) {
       }
     }
     prev_wifi_connected_ = true;
-  }
+    wifi_down_since_ms_ = 0;
+  } else {
+    const bool wifi_config_missing = (cfg_ == nullptr || cfg_->wifi_ssid[0] == '\0');
+    if (wifi_config_missing && !ap_active_) {
+      LOGW("Wi-Fi not configured, starting AP portal now");
+      start_ap_();
+    }
 
-  const bool wifi_config_missing =
-      (cfg_ == nullptr || cfg_->wifi_ssid[0] == '\0');
-  if (wifi_config_missing && !ap_active_) {
-    LOGW("Wi-Fi not configured, starting AP portal now");
-    start_ap_();
-  }
+    if (prev_wifi_connected_) {
+      wifi_down_since_ms_ = now_ms;
+      prev_wifi_connected_ = false;
+    }
 
-  if (prev_wifi_connected_) {
-    wifi_down_since_ms_ = now_ms;
-    prev_wifi_connected_ = false;
-  }
+    if (wifi_down_since_ms_ == 0) {
+      wifi_down_since_ms_ = now_ms;
+    }
 
-  if (wifi_down_since_ms_ == 0) {
-    wifi_down_since_ms_ = now_ms;
-  }
-
-  if (!ap_active_ && (now_ms - wifi_down_since_ms_) >= WIFI_AP_FALLBACK_MS) {
-    start_ap_();
+    if (!ap_active_ && (now_ms - wifi_down_since_ms_) >= WIFI_AP_FALLBACK_MS) {
+      start_ap_();
+    }
   }
 
   if (server_active_) {
