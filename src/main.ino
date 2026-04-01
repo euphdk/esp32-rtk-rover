@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <WiFi.h>
 #include <string.h>
@@ -165,7 +166,17 @@ static void tick_gnss_rx(uint32_t now_ms) {
     }
 
     if (r == NmeaParseResult::TOO_LONG) {
-      status_set_error("nmea: line too long");
+      g_status.nmea_too_long++;
+
+      char err[96];
+      snprintf(err, sizeof(err), "nmea: line too long (count=%lu)",
+               static_cast<unsigned long>(g_status.nmea_too_long));
+      status_set_error(err);
+
+      if (g_status.nmea_too_long <= 3 || (g_status.nmea_too_long % 50) == 0) {
+        LOGW("NMEA line too long; dropped frame (count=%lu)",
+             static_cast<unsigned long>(g_status.nmea_too_long));
+      }
       continue;
     }
 
@@ -233,7 +244,7 @@ static void tick_health(uint32_t now_ms) {
     hdop_frac = g_status.gnss_hdop_tenths % 10;
   }
 
-  LOGI("st wifi=%d ap=%d cfg=%s mdns=%d ntrip=%d qf=%d rtcm=%lu rx=%lu nmea_in=%lu out=%lu bad=%lu "
+  LOGI("st wifi=%d ap=%d cfg=%s mdns=%d ntrip=%d qf=%d rtcm=%lu rx=%lu nmea_in=%lu out=%lu bad=%lu tlong=%lu "
        "fix=%s sat=%u hdop=%d.%d age_nmea=%lus age_rtcm=%lus err=%s",
        static_cast<int>(g_status.wifi_connected),
        static_cast<int>(g_status.ap_active), g_status.cfg_from_nvs ? "nvs" : "default",
@@ -245,6 +256,7 @@ static void tick_health(uint32_t now_ms) {
        static_cast<unsigned long>(g_status.nmea_lines_in),
        static_cast<unsigned long>(g_status.nmea_lines_out),
        static_cast<unsigned long>(g_status.nmea_bad_checksum),
+       static_cast<unsigned long>(g_status.nmea_too_long),
        fix_quality_text(g_status.gnss_fix_quality),
        static_cast<unsigned>(g_status.gnss_sats_used), hdop_whole, hdop_frac,
        static_cast<unsigned long>(nmea_age_s), static_cast<unsigned long>(rtcm_age_s),

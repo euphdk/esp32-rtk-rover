@@ -70,7 +70,7 @@ static String health_line() {
   char buf[320];
   snprintf(
       buf, sizeof(buf),
-      "st wifi=%d ap=%d cfg=%s mdns=%d ntrip=%d qf=%d rtcm=%lu rx=%lu nmea_in=%lu out=%lu bad=%lu "
+      "st wifi=%d ap=%d cfg=%s mdns=%d ntrip=%d qf=%d rtcm=%lu rx=%lu nmea_in=%lu out=%lu bad=%lu tlong=%lu "
       "fix=%s sat=%u hdop=%d.%d age_nmea=%lus age_rtcm=%lus err=%s",
       static_cast<int>(g_status.wifi_connected), static_cast<int>(g_status.ap_active),
       g_status.cfg_from_nvs ? "nvs" : "default", static_cast<int>(g_status.mdns_started),
@@ -80,6 +80,7 @@ static String health_line() {
       static_cast<unsigned long>(g_status.nmea_lines_in),
       static_cast<unsigned long>(g_status.nmea_lines_out),
       static_cast<unsigned long>(g_status.nmea_bad_checksum),
+      static_cast<unsigned long>(g_status.nmea_too_long),
       fix_quality_text(g_status.gnss_fix_quality), static_cast<unsigned>(g_status.gnss_sats_used),
       hdop_whole, hdop_frac, static_cast<unsigned long>(nmea_age_s),
       static_cast<unsigned long>(rtcm_age_s), g_status.last_error);

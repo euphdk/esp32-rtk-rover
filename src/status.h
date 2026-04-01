@@ -15,6 +15,7 @@ struct RoverStatus {
   uint32_t nmea_lines_in;
   uint32_t nmea_lines_out;
   uint32_t nmea_bad_checksum;
+  uint32_t nmea_too_long;
 
   uint8_t gnss_fix_quality;
   uint8_t gnss_sats_used;
